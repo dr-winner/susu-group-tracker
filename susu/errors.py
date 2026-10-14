@@ -21,3 +21,19 @@ class DuplicateMemberError(SusuError):
     """A member with this name or ID already exists."""
 
 
+class UnknownMemberError(SusuError):
+    """The named member is not in the group."""
+
+
+class GroupStartedError(SusuError):
+    """Members can no longer be added because payments have started."""
+
+
+class WrongWeekError(SusuError):
+    """A payment was aimed at a week that is not the current week."""
+
+
+class OverpaymentError(SusuError):
+    """A payment is larger than what the member still owes this week."""
+
+

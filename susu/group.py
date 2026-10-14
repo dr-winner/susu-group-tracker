@@ -16,7 +16,12 @@ from .errors import (
     InvalidAmountError,
     DuplicateMemberError,
     InvalidNameError,
+    GroupStartedError,
+    OverpaymentError,
+    UnknownMemberError,
+    WrongWeekError,
 )
+from .money import format_amount
 
 
 def _normalise(name: str) -> str:
@@ -38,6 +43,8 @@ class Group:
         self._members: list[str] = []      # display names, in join order
         self._lookup: dict[str, str] = {}  # normalised name -> display name
         self._current_week = 1
+        self._paid: dict[str, int] = {}    # member -> pesewas paid THIS week
+        self._started = False              # True once any payment is recorded
 
     # ----- read-only views -------------------------------------------------
 
@@ -60,11 +67,63 @@ class Group:
         """Add a member at the end of the payout order; return the stored name."""
         if not isinstance(name, str) or not name.strip():
             raise InvalidNameError("A member needs a name or ID.")
+        if self._started:
+            raise GroupStartedError(
+                "Members cannot be added after payments have started: "
+                "a late joiner would receive the pot without having paid earlier weeks."
+            )
         key = _normalise(name)
         if key in self._lookup:
             raise DuplicateMemberError(f"'{self._lookup[key]}' is already in the group.")
         display = " ".join(name.split())
         self._members.append(display)
         self._lookup[key] = display
+        self._paid[display] = 0
         return display
+
+    def _resolve(self, name: str) -> str:
+        """Find a member by name (any letter case); raise if unknown."""
+        if isinstance(name, str):
+            member = self._lookup.get(_normalise(name))
+            if member is not None:
+                return member
+        raise UnknownMemberError(f"'{name}' is not a member of this group.")
+
+    # ----- contributions ---------------------------------------------------
+
+    def contribute(self, name: str, amount: int, week: int | None = None) -> int:
+        """Record a payment (in pesewas) from a member for the current week.
+
+        Partial payments are allowed. Returns what the member still owes
+        this week after the payment.
+        """
+        member = self._resolve(name)
+        if week is not None and week != self._current_week:
+            raise WrongWeekError(
+                f"Only week {self._current_week} is open for payments "
+                f"(week {week} was requested). No paying ahead or behind."
+            )
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+            raise InvalidAmountError("A payment must be greater than zero.")
+        owed = self._weekly_amount - self._paid[member]
+        if owed == 0:
+            raise OverpaymentError(
+                f"{member} has already paid in full for week {self._current_week}."
+            )
+        if amount > owed:
+            raise OverpaymentError(
+                f"{member} owes only GHS {format_amount(owed)} for week "
+                f"{self._current_week}; cannot accept GHS {format_amount(amount)}."
+            )
+        self._paid[member] += amount
+        self._started = True
+        return owed - amount
+
+    def owing(self) -> tuple[tuple[str, int], ...]:
+        """(member, pesewas still owed) for everyone not yet paid in full."""
+        return tuple(
+            (member, self._weekly_amount - self._paid[member])
+            for member in self._members
+            if self._paid[member] < self._weekly_amount
+        )
 
