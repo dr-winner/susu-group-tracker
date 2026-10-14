@@ -37,3 +37,11 @@ class OverpaymentError(SusuError):
     """A payment is larger than what the member still owes this week."""
 
 
+class NoMembersError(SusuError):
+    """The action needs at least one member."""
+
+
+class GroupCompleteError(SusuError):
+    """Every member has already received the pot; the cycle is over."""
+
+

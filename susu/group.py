@@ -20,8 +20,11 @@ from .errors import (
     OverpaymentError,
     UnknownMemberError,
     WrongWeekError,
+    GroupCompleteError,
+    NoMembersError,
 )
 from .money import format_amount
+from .models import CloseResult, Payout, Report
 
 
 def _normalise(name: str) -> str:
@@ -45,6 +48,7 @@ class Group:
         self._current_week = 1
         self._paid: dict[str, int] = {}    # member -> pesewas paid THIS week
         self._started = False              # True once any payment is recorded
+        self._payouts: list[Payout] = []
 
     # ----- read-only views -------------------------------------------------
 
@@ -60,6 +64,15 @@ class Group:
     @property
     def current_week(self) -> int:
         return self._current_week
+
+    @property
+    def payouts(self) -> tuple[Payout, ...]:
+        return tuple(self._payouts)
+
+    @property
+    def is_complete(self) -> bool:
+        """True once every member has received the pot."""
+        return bool(self._members) and self._current_week > len(self._members)
 
     # ----- members ---------------------------------------------------------
 
@@ -97,6 +110,10 @@ class Group:
         Partial payments are allowed. Returns what the member still owes
         this week after the payment.
         """
+        if self.is_complete:
+            raise GroupCompleteError(
+                "The cycle is complete: every member has already received the pot."
+            )
         member = self._resolve(name)
         if week is not None and week != self._current_week:
             raise WrongWeekError(
@@ -126,4 +143,33 @@ class Group:
             for member in self._members
             if self._paid[member] < self._weekly_amount
         )
+
+    # ----- closing a week --------------------------------------------------
+
+    def close_week(self) -> CloseResult:
+        """Try to close the current week.
+
+        If everyone has paid in full, the pot goes to the next member in
+        order and the next week begins. If not, nothing is paid and the
+        result lists who still owes what. Money already paid stays recorded.
+        """
+        if self.is_complete:
+            raise GroupCompleteError(
+                "The cycle is complete: every member has already received the pot."
+            )
+        if not self._members:
+            raise NoMembersError("Add at least one member before closing a week.")
+        owing = self.owing()
+        if owing:
+            return CloseResult(closed=False, payout=None, owing=owing)
+        recipient = self._members[self._current_week - 1]
+        payout = Payout(
+            week=self._current_week,
+            member=recipient,
+            amount=self._weekly_amount * len(self._members),
+        )
+        self._payouts.append(payout)
+        self._current_week += 1
+        self._paid = {member: 0 for member in self._members}
+        return CloseResult(closed=True, payout=payout, owing=())
 
