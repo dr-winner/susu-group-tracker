@@ -13,3 +13,11 @@ class InvalidAmountError(SusuError):
     """An amount is not a valid, allowed money value."""
 
 
+class InvalidNameError(SusuError):
+    """A member name or ID is empty or not text."""
+
+
+class DuplicateMemberError(SusuError):
+    """A member with this name or ID already exists."""
+
+
