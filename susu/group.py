@@ -173,3 +173,29 @@ class Group:
         self._paid = {member: 0 for member in self._members}
         return CloseResult(closed=True, payout=payout, owing=())
 
+    # ----- reporting -------------------------------------------------------
+
+    def report(self) -> Report:
+        """A snapshot: current week, who paid in full, who owes, payout history."""
+        complete = self.is_complete
+        paid_in_full = ()
+        owing = ()
+        next_recipient = None
+        if not complete:
+            paid_in_full = tuple(
+                m for m in self._members if self._paid[m] >= self._weekly_amount
+            )
+            owing = self.owing()
+            if self._members:
+                next_recipient = self._members[self._current_week - 1]
+        return Report(
+            weekly_amount=self._weekly_amount,
+            pot=self._weekly_amount * len(self._members),
+            current_week=self._current_week,
+            total_weeks=len(self._members),
+            complete=complete,
+            next_recipient=next_recipient,
+            paid_in_full=paid_in_full,
+            owing=owing,
+            payouts=self.payouts,
+        )
